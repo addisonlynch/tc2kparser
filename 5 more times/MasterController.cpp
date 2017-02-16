@@ -1,0 +1,249 @@
+//
+//  Master Control.cpp
+//  5 more times
+//
+//  Created by Addison Lynch on 8/22/16.
+//  Copyright © 2016 Addison Lynch. All rights reserved.
+//
+
+#include "MasterController.hpp"
+
+// CONSTRUCTOR
+
+MasterController::MasterController(const char* databaseName, const char* masterListName)
+{
+   assert( jRemote = new JSONController(databaseName));
+    yRemote = new YahooController;
+    eRemote = new ExcelController;
+    today  = new dateTime;
+    
+    if(!jRemote || !eRemote || !yRemote || !today)
+        cerr << "FAILURE /// MasterController init (CRITICAL)" << endl;
+    if(!processMaster(masterListName))
+    { cerr << "FAILURE /// MasterController init (CRITICAL)" << endl;
+    }// initializes m_masterList
+}
+
+// DESTRUCTOR
+
+MasterController::~MasterController()
+{
+    delete jRemote;
+    delete yRemote;
+    delete eRemote;
+    delete today;
+}
+
+
+// MAIN FUNCTION
+
+bool MasterController::dailyUpdate()
+{
+
+    assert(processToday());
+    assert(updateDatabase());
+    assert(updateMaster());
+    
+ 
+    
+    assert(writeMaster("masterlist.txt"));
+    assert(writeJSONFile("database"));
+    return true;
+    
+}
+
+
+
+
+
+
+// PROCESS
+
+
+bool MasterController::processToday() // read in today's symbols, create todayTicker node
+{
+    cerr << "Processing today's information..." << endl;
+    std::queue<string> temp;
+    
+    if(!eRemote->processTodaysSheet(temp))
+    {
+        cerr << "FAILURE /// eRemote->processTodaysSheet" << endl;
+        return false;
+    }
+        
+   
+    cerr << "Today's tickers: " << endl;
+    std::queue<string> buff = temp;
+    while (buff.size() != 0)
+    {
+        cerr << buff.front() << endl;
+        buff.pop();
+    }
+    
+    cerr << "*****" << endl;
+    std::queue<todayTicker> send;
+    
+    while(temp.size() != 0)
+    {
+        
+        string buffer = temp.front();
+        todayTicker ticker;
+        ticker.tickerSymbol = buffer;
+        if(checkNew(buffer.c_str(), m_masterList))
+        {
+            ticker.newStock = true;
+        }
+        ticker.todaysClose = 42.24;
+        send.push(ticker);
+        temp.pop();
+    }
+    m_todaysQueue = send;
+    addToMaster = tickerToString(m_todaysQueue); // initializes addToMaster
+    return true;
+}
+
+
+
+bool MasterController::processMaster(const char* fileName) // must happen first
+{
+    cerr << "Processing master list..." << endl;
+    ifstream file(fileName);
+    if(file)
+    {
+    std::queue<std::string> tickers;
+    
+    for (std::string line; std::getline( file, line ); /**/ )
+    {
+        cerr << line << endl;
+        tickers.push( line );
+    }
+    
+    cerr << "Master list size: " << tickers.size() << endl;
+    cerr << "*****" << endl;
+
+    file.close();
+    
+    
+    while(tickers.size() != 0)
+    {
+        m_masterList.add(tickers.front());
+        tickers.pop();
+    }
+    
+    return true;
+    }
+    else
+    {
+        cerr << "FAILURE /// Could not load master file!" << endl;
+        return false;
+    }
+}
+
+// UPDATE
+
+bool MasterController::updateDatabase()
+{
+    jRemote->add(m_todaysQueue);
+    return true;
+}
+
+bool MasterController::updateMaster()
+{
+    std::queue<string> temp = addToMaster;
+    
+    if (temp.size() == 0)
+        return false;
+    while(temp.size() != 0)
+    {
+        if(!m_masterList.search(temp.front()))
+            m_masterList.add(temp.front());
+        temp.pop();
+    }
+    
+    return true;
+}
+
+bool MasterController::retrievePrices()
+{
+    std::queue<string> store = m_masterList.convertToQueue();
+    std::queue<string> recieve = yRemote->downloadTodaysPrices(store);
+    masterQueue = recieve;
+    return true;
+}
+
+
+
+
+// WRITE
+
+bool MasterController::writeMaster(const char* fileName)
+{
+    cerr << "Writing master list..." << endl;
+    ofstream outFile(fileName, ios::out | ios::app);
+    if(!outFile)
+    {
+        cerr << "writeMaster: outFile could not be opened!" << endl;
+        return false;
+    }
+    
+
+        m_masterList.printToFile(outFile);
+
+    outFile.close();
+    return true;
+}
+
+bool MasterController::writeJSONFile(std::string fileName)
+{
+
+    std::string fileNameFormatted = fileName += today->todaysDateFormatted() += ".json";
+
+    std::string temp = jRemote->dumpJSON();
+    
+   
+    
+    ofstream file(fileNameFormatted, ios::out | ios::trunc); // update today's DB
+    if(!file){
+        cout << "outFile could not open file!" << endl;
+        return false;
+    }
+
+        file << temp;
+
+    
+    file.close();
+    return true;
+}
+
+
+//// AUX FUNCTIONS
+
+bool MasterController::checkNew(const char* ticker, const BST masterList) const
+{
+    BST today = masterList;
+    string temp(ticker);
+    if(today.search(ticker))
+    {
+        return true;
+        
+    }
+    return false;
+}
+
+
+std::queue<std::string> MasterController::tickerToString(const queue<todayTicker>& todaysQueue)
+{
+    queue<todayTicker> temp = todaysQueue;
+    queue<string> send;
+    while(temp.size() != 0)
+    {
+        string buffer;
+        buffer = temp.front().tickerSymbol;
+        send.push(buffer);
+        temp.pop();
+    }
+    return send;
+}
+
+
+
