@@ -16,9 +16,8 @@ MasterController::MasterController(const char* databaseName, const char* masterL
     yRemote = new YahooController;
     eRemote = new ExcelController;
     today  = new dateTime;
-    
     if(!jRemote || !eRemote || !yRemote || !today)
-        cerr << "FAILURE /// MasterController init (CRITICAL)" << endl;
+      throw exception::LogicException("remotes", "The remotes could not be initialized");
     if(!processMaster(masterListName))
     { cerr << "FAILURE /// MasterController init (CRITICAL)" << endl;
     }// initializes m_masterList
